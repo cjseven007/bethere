@@ -1,6 +1,6 @@
 @extends('layouts.app')
 @section('title', 'Users')
-@section('page_title', 'Employees — ' . ($org->name ?? ''))
+@section('page_title', 'Employees - ' . ($org->name ?? ''))
 
 @section('page_actions')
     <a href="{{ route('register') }}" class="btn btn-primary btn-sm">

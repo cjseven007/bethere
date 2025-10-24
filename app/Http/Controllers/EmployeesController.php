@@ -3,53 +3,52 @@
 namespace App\Http\Controllers;
 
 use App\Models\Employee;
-use App\Models\FaceEmbedding;
-use App\Support\OrgContext;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Auth;
 
 class EmployeesController extends Controller
 {
-    public function embed(Request $request, Employee $employee)
+    public function store(Request $request, Employee $employee)
     {
-        $org = OrgContext::current();
-        abort_if(!$org || $employee->organization_id !== $org->id, 403);
-
-        // Must be admin of this org
-        /** @var User|null $user */
-        $user = Auth::user();
-        $isAdmin = $user
-            ->organizations()
-            ->where('organizations.id', $org->id)
-            ->wherePivot('role','admin')
-            ->exists();
-        abort_if(!$isAdmin, 403);
-
+        // Expect an image (from upload or camera blob)
         $request->validate([
-            'image' => 'required|image|mimes:jpeg,png|max:5120',
+            'image' => 'required|image|mimes:jpeg,png,jpg|max:6144', // 6MB
         ]);
 
-        // Call Python Cloud Run (buffalo model fixed)
+        $faceUrl = rtrim(config('services.face.url'), '/') . '/embed';
+
+        // Send to FastAPI /embed
         $resp = Http::withHeaders([
-                    'x-api-key' => config('services.face.key'),
-                ])
-                ->attach('image', fopen($request->file('image')->getRealPath(), 'r'), 'face.jpg')
-                ->post(rtrim(config('services.face.url'), '/').'/embed', [
-                    'model' => 'buffalo_l',
-                ]);
+                'x-api-key' => config('services.face.key'), // remove if FastAPI has no auth
+            ])->attach(
+                'image',
+                fopen($request->file('image')->getRealPath(), 'r'),
+                $request->file('image')->getClientOriginalName()
+            )->post($faceUrl);
 
         if (!$resp->ok()) {
             return response()->json(['ok' => false, 'error' => $resp->body()], 422);
         }
 
-        $vector = $resp->json('embedding'); // expect float[] from Python
+        // We expect FastAPI to return an "embedding" JSON array (length 512).
+        $embedding = $resp->json('embedding');
 
-        // upsert
-        FaceEmbedding::updateOrCreate(
-            ['employee_id' => $employee->id, 'model' => 'buffalo_l'],
-            ['vector' => $vector]
+        if (!is_array($embedding) || count($embedding) !== 512) {
+            // If your FastAPI returns only base64, add JSON array support there (recommended).
+            return response()->json([
+                'ok' => false,
+                'error' => 'Embedding array not present or invalid length. Ensure FastAPI /embed returns {"embedding":[...512 floats...]}'
+            ], 422);
+        }
+
+        // Upsert into JSON column (unique: employee_id + model)
+        $model = 'buffalo_l';
+        $now = now();
+
+        DB::table('face_embeddings')->updateOrInsert(
+            ['employee_id' => $employee->id, 'model' => $model],
+            ['vector' => json_encode(array_map('floatval', $embedding)), 'updated_at' => $now, 'created_at' => $now]
         );
 
         return response()->json(['ok' => true]);

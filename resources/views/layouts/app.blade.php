@@ -1,45 +1,15 @@
-@php
-    use Illuminate\Support\Facades\Route;
-
-    $navItems = [
-        ['label' => 'Users', 'icon' => 'bi-people', 'route' => 'users.index', 'pattern' => 'users*'],
-        [
-            'label' => 'Scan Attendance',
-            'icon' => 'bi-qr-code-scan',
-            'route' => 'attendance.scan',
-            'pattern' => 'attendance/scan*',
-        ],
-        ['label' => 'Settings', 'icon' => 'bi-gear', 'route' => 'settings.index', 'pattern' => 'settings*'],
-    ];
-
-    $hrefFor = fn($item) => !empty($item['route']) && Route::has($item['route'])
-        ? route($item['route'])
-        : url($item['pattern'] ?? '#');
-
-    $isActive = fn($item) => !empty($item['route']) && Route::has($item['route'])
-        ? request()->routeIs($item['route'] . '*')
-        : (!empty($item['pattern'])
-            ? request()->is($item['pattern'])
-            : false);
-@endphp
-
 <!doctype html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>@yield('title', 'BeThere')</title>
-
+    <!-- ... -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     @vite(['resources/sass/app.scss', 'resources/js/app.js'])
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     @livewireStyles
-
     <style>
-        /* Add body padding to prevent content hiding behind fixed header */
         body {
             padding-top: 56px;
-            /* default navbar height */
         }
 
         @media (max-width: 991.98px) {
@@ -47,26 +17,31 @@
                 padding-top: 60px;
             }
         }
+
+        /* Desktop sidebar sticks under the fixed navbar */
+        @media (min-width: 992px) {
+            #sidebar {
+                top: 56px;
+                height: calc(100vh - 56px);
+            }
+        }
     </style>
 </head>
 
 <body class="bg-light">
-
     {{-- FIXED HEADER --}}
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top shadow-sm">
         <div class="container-fluid">
-            {{-- Brand --}}
             <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url('/') }}">
                 <i class="bi bi-robot"></i> <span class="fw-bold">BeThere</span>
             </a>
 
-            {{-- Sidebar toggler on mobile --}}
-            <button class="navbar-toggler" type="button" aria-controls="sidebar" aria-expanded="false"
-                aria-label="Toggle sidebar" onclick="document.getElementById('sidebar').classList.toggle('show')">
+            {{-- Burger toggles the OFFCANVAS on mobile --}}
+            <button class="navbar-toggler d-lg-none" type="button" data-bs-toggle="offcanvas"
+                data-bs-target="#mobileSidebar" aria-controls="mobileSidebar" aria-label="Toggle sidebar">
                 <span class="navbar-toggler-icon"></span>
             </button>
 
-            {{-- Right side (auth) --}}
             <div class="d-flex ms-auto align-items-center">
                 @auth
                     <div class="dropdown">
@@ -95,25 +70,29 @@
         </div>
     </nav>
 
+    {{-- MOBILE SIDEBAR: Offcanvas --}}
+    <div class="offcanvas offcanvas-start" tabindex="-1" id="mobileSidebar" aria-labelledby="mobileSidebarLabel">
+        <div class="offcanvas-header">
+            <h5 class="offcanvas-title" id="mobileSidebarLabel">
+                <i class="bi bi-robot me-2"></i>Menu
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body p-0">
+            @include('partials.nav-items', ['mobile' => true])
+        </div>
+    </div>
+
     <div class="container-fluid">
         <div class="row min-vh-100">
-            {{-- SIDEBAR --}}
-            <nav id="sidebar"
-                class="col-lg-2 col-md-3 col-12 collapse show bg-white border-end p-0 d-flex flex-column vh-100 position-sticky"
-                style="top: 56px;">
-                <div class="list-group list-group-flush py-2 flex-grow-1 overflow-auto">
-                    @foreach ($navItems as $item)
-                        <a href="{{ $hrefFor($item) }}"
-                            class="list-group-item list-group-item-action d-flex align-items-center {{ $isActive($item) ? 'active' : '' }}">
-                            <i class="bi {{ $item['icon'] }} me-2"></i>
-                            <span>{{ $item['label'] }}</span>
-                        </a>
-                    @endforeach
-                </div>
+            {{-- DESKTOP SIDEBAR (hidden on mobile) --}}
+            <nav id="sidebar" class="col-lg-2 d-none d-lg-flex bg-white border-end p-0 flex-column position-sticky"
+                style="z-index: 1000;">
+                @include('partials.nav-items')
             </nav>
 
             {{-- MAIN --}}
-            <main class="col-lg-10 col-md-9 col-12 py-3">
+            <main class="col-lg-10 col-12 py-3">
                 @hasSection('page_actions')
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h1 class="h4 m-0">@yield('page_title', 'Dashboard')</h1>
@@ -140,7 +119,16 @@
             </main>
         </div>
     </div>
+
+    {{-- jQuery + Bootstrap Bundle (if your app.js doesn’t already include Bootstrap JS) --}}
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    {{-- Bootstrap JS bundle (includes Popper) --}}
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous">
+    </script>
+
     @livewireScripts
+    @stack('scripts')
 </body>
 
 </html>

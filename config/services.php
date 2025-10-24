@@ -36,8 +36,8 @@ return [
     ],
 
     'face' => [
-        'url' => env('FACE_API_URL', 'https://<your-cloud-run-url>'),
-        'key' => env('FACE_API_KEY', ''),
+        'url' => env('FACE_API_URL', 'http://127.0.0.1:9000'),
+        'key' => env('FACE_API_KEY', ''), // if you turn auth back on
     ],
 
 ];

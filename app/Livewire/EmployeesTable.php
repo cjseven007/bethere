@@ -12,7 +12,7 @@ class EmployeesTable extends Component
 
     public $search = '';
     public $sort = 'id';
-    public $dir  = 'asc'; // <— ascending by default
+    public $dir  = 'asc';
 
     protected $updatesQueryString = ['search', 'sort', 'dir'];
     protected $listeners = ['embeddingSaved' => '$refresh'];
@@ -44,7 +44,6 @@ class EmployeesTable extends Component
             });
         }
 
-        // Use your chosen sort/dir. If you strictly want ID ascending, hardcode ->orderBy('id','asc')
         return $q->orderBy($this->sort, $this->dir)->paginate(20);
     }
 

@@ -10,7 +10,6 @@ class ScanController extends Controller
 {
     public function show()
     {
-        // load settings (simple single-row table)
         $settings = DB::table('app_settings')->first();
         return view('scan', compact('settings'));
     }
@@ -22,6 +21,7 @@ class ScanController extends Controller
         $threshold = optional(DB::table('app_settings')->first())->threshold ?? 0.40;
 
         $resp = Http::withHeaders([
+                // include if your FastAPI enforces an API key; otherwise remove
                 'x-api-key' => config('services.face.key'),
             ])->attach(
                 'image',
@@ -36,12 +36,18 @@ class ScanController extends Controller
             return response()->json(['ok' => false, 'error' => $resp->body()], 422);
         }
 
-        $userId = $resp->json('user_id');
-        $score  = $resp->json('score');
-        $name   = $userId ? optional(\App\Models\User::find($userId))->name : null;
+        // FastAPI returns: { ok, match, score, threshold }
+        $match = $resp->json('match');
+        $score = $resp->json('score');
+        $name  = $match ? optional(\App\Models\Employee::find($match))->name : null;
 
-        // Optional: write attendance here
+        // Optional: record attendance here if $match !== null
 
-        return response()->json(['ok' => true, 'user_id' => $userId, 'name' => $name, 'score' => $score]);
+        return response()->json([
+            'ok' => true,
+            'user_id' => $match,
+            'name' => $name,
+            'score' => $score,
+        ]);
     }
 }
