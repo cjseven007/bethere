@@ -21,9 +21,9 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse($employees as $e)
+                    @forelse($employees as $index=>$e)
                         <tr>
-                            <td>{{ $e->id }}</td>
+                            <td>{{ $index + 1 }}</td>
                             <td>{{ $e->name }}</td>
                             <td>{{ $e->email }}</td>
                             <td>
@@ -35,17 +35,30 @@
                             </td>
                             <td class="text-end">
                                 @if (!$e->embedding)
-                                    <button class="btn btn-sm btn-primary" data-employee-id="{{ $e->id }}"
+                                    <button class="btn btn-sm btn-primary me-1" data-employee-id="{{ $e->id }}"
                                         data-employee-name="{{ $e->name }}" onclick="FaceEmbed.open(this)">
-                                        <i class="bi bi-camera-video me-1"></i> Capture Face
+                                        <i class="bi bi-camera-video"></i> Capture Face
                                     </button>
                                 @else
-                                    <button class="btn btn-sm btn-outline-primary"
+                                    <button class="btn btn-sm btn-outline-primary me-1"
                                         data-employee-id="{{ $e->id }}" data-employee-name="{{ $e->name }}"
                                         onclick="FaceEmbed.open(this)">
-                                        <i class="bi bi-pencil-square me-1"></i> Edit Face
+                                        <i class="bi bi-pencil-square"></i> Edit Face
                                     </button>
                                 @endif
+                                <button class="btn btn-sm btn-outline-secondary me-1" data-bs-toggle="tooltip"
+                                    title="Edit Info" data-employee-id="{{ $e->id }}"
+                                    data-employee-name="{{ $e->name }}" data-employee-email="{{ $e->email }}"
+                                    onclick="EmpActions.openEdit(this)">
+                                    <i class="bi bi-pencil-square"></i>
+                                </button>
+
+                                {{-- Delete --}}
+                                <button class="btn btn-sm btn-outline-secondary text-danger" data-bs-toggle="tooltip"
+                                    title="Delete" data-employee-id="{{ $e->id }}"
+                                    data-employee-name="{{ $e->name }}" onclick="EmpActions.openDelete(this)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
                             </td>
                         </tr>
                     @empty
@@ -64,6 +77,7 @@
     </div>
 
     {{-- Modal --}}
+    {{-- Embed Face Modal --}}
     <div class="modal fade" id="embedModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
@@ -132,6 +146,69 @@
                         onclick="FaceEmbed.close()">Close</button>
                     <button id="btnEmbedSave" class="btn btn-primary" type="button" onclick="FaceEmbed.submit()">
                         <i class="bi bi-cloud-upload me-1"></i> Save Embedding
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- ========== Edit Modal ========== --}}
+    <div class="modal fade" id="editEmpModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <form id="editEmpForm" class="modal-content" onsubmit="return EmpActions.submitEdit(event)">
+                @csrf @method('PUT')
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Employee</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"
+                        onclick="EmpActions.resetEdit()"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="eeAlert" class="alert d-none" role="alert"></div>
+                    <input type="hidden" name="employee_id" id="eeId">
+
+                    <div class="mb-3">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input name="name" id="eeName" type="text" class="form-control" required
+                            maxlength="255">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email <span class="text-danger">*</span></label>
+                        <input name="email" id="eeEmail" type="email" class="form-control" required
+                            maxlength="255">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal"
+                        onclick="EmpActions.resetEdit()">Cancel</button>
+                    <button id="eeSubmitBtn" class="btn btn-primary" type="submit">
+                        <i class="bi bi-save me-1"></i> Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {{-- ========== Delete Confirm Modal ========== --}}
+    <div class="modal fade" id="delEmpModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 id="delTitle" class="modal-title">Delete Employee</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"
+                        onclick="EmpActions.resetDelete()"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="deAlert" class="alert d-none" role="alert"></div>
+                    <p class="mb-1">Are you sure you want to delete <strong id="delName">this employee</strong>?
+                    </p>
+                    <p class="mb-0 text-muted small">This will also remove their embeddings (if any).</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal"
+                        onclick="EmpActions.resetDelete()">Cancel</button>
+                    <button id="deSubmitBtn" class="btn btn-danger" type="button"
+                        onclick="EmpActions.submitDelete()">
+                        <i class="bi bi-trash me-1"></i> Delete
                     </button>
                 </div>
             </div>
@@ -288,6 +365,188 @@
                 startCamera,
                 stopCamera,
                 submit
+            };
+        })();
+
+        (function() {
+            // Bootstrap tooltips
+            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+                new bootstrap.Tooltip(el);
+            });
+        })();
+
+        function lwEvent(name, payload = {}) {
+            if (window.Livewire?.dispatch) return Livewire.dispatch(name, payload); // v3
+            if (window.Livewire?.emit) return Livewire.emit(name, payload); // v2
+        }
+
+        window.EmpActions = (function() {
+            // ==== Edit wiring ====
+            const editModalEl = document.getElementById('editEmpModal');
+            const editModal = bootstrap.Modal.getOrCreateInstance(editModalEl);
+            const eeAlert = document.getElementById('eeAlert');
+            const eeForm = document.getElementById('editEmpForm');
+            const eeId = document.getElementById('eeId');
+            const eeName = document.getElementById('eeName');
+            const eeEmail = document.getElementById('eeEmail');
+            const eeBtn = document.getElementById('eeSubmitBtn');
+
+            function eeShowAlert(type, msg) {
+                eeAlert.className = 'alert alert-' + type;
+                eeAlert.textContent = msg;
+                eeAlert.classList.remove('d-none');
+            }
+
+            function eeClear() {
+                eeAlert.className = 'alert d-none';
+                eeAlert.textContent = '';
+            }
+
+            function eeDisable(on) {
+                eeBtn.disabled = !!on;
+                eeBtn.innerHTML = on ?
+                    '<span class="spinner-border spinner-border-sm me-1"></span> Saving...' :
+                    '<i class="bi bi-save me-1"></i> Save';
+            }
+
+            function openEdit(btn) {
+                eeClear();
+                eeId.value = btn.getAttribute('data-employee-id');
+                eeName.value = btn.getAttribute('data-employee-name');
+                eeEmail.value = btn.getAttribute('data-employee-email');
+                editModal.show();
+            }
+
+            function resetEdit() {
+                eeClear();
+                eeForm.reset();
+                eeDisable(false);
+            }
+
+            async function submitEdit(e) {
+                e.preventDefault();
+                eeClear();
+                eeDisable(true);
+
+                const id = eeId.value;
+                const fd = new FormData(eeForm);
+
+                try {
+                    const res = await fetch(@json(route('employees.update', '__ID__')).replace('__ID__', id), {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': @json(csrf_token()),
+                            'X-HTTP-Method-Override': 'PUT'
+                        },
+                        body: fd
+                    });
+                    const data = await res.json().catch(() => ({}));
+
+                    if (!res.ok || !data.ok) {
+                        let msg = 'Failed to update.';
+                        if (res.status === 422 && data?.errors) msg = Object.values(data.errors).flat().join(
+                            ' ');
+                        else if (data?.error) msg = data.error;
+                        eeShowAlert('danger', msg);
+                        eeDisable(false);
+                        return;
+                    }
+
+                    lwEvent('employeeUpdated');
+                    resetEdit();
+                    editModal.hide();
+                } catch (err) {
+                    eeShowAlert('danger', 'Network error: ' + err);
+                    eeDisable(false);
+                }
+            }
+
+            editModalEl.addEventListener('hidden.bs.modal', () => {
+                document.body.classList.remove('modal-open');
+                document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+            });
+
+            // ==== Delete wiring ====
+            const delModalEl = document.getElementById('delEmpModal');
+            const delModal = bootstrap.Modal.getOrCreateInstance(delModalEl);
+            const deAlert = document.getElementById('deAlert');
+            const deBtn = document.getElementById('deSubmitBtn');
+            const delName = document.getElementById('delName');
+            let deleteId = null;
+
+            function deShowAlert(type, msg) {
+                deAlert.className = 'alert alert-' + type;
+                deAlert.textContent = msg;
+                deAlert.classList.remove('d-none');
+            }
+
+            function deClear() {
+                deAlert.className = 'alert d-none';
+                deAlert.textContent = '';
+            }
+
+            function deDisable(on) {
+                deBtn.disabled = !!on;
+                deBtn.innerHTML = on ?
+                    '<span class="spinner-border spinner-border-sm me-1"></span> Deleting...' :
+                    '<i class="bi bi-trash me-1"></i> Delete';
+            }
+
+            function openDelete(btn) {
+                deleteId = btn.getAttribute('data-employee-id');
+                delName.textContent = btn.getAttribute('data-employee-name') || 'this employee';
+                deClear();
+                delModal.show();
+            }
+
+            function resetDelete() {
+                deleteId = null;
+                deClear();
+                deDisable(false);
+            }
+
+            async function submitDelete() {
+                if (!deleteId) return;
+                deClear();
+                deDisable(true);
+                try {
+                    const res = await fetch(@json(route('employees.destroy', '__ID__')).replace('__ID__', deleteId), {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': @json(csrf_token()),
+                            'X-HTTP-Method-Override': 'DELETE'
+                        },
+                    });
+                    const data = await res.json().catch(() => ({}));
+
+                    if (!res.ok || !data.ok) {
+                        deShowAlert('danger', data?.error || 'Failed to delete.');
+                        deDisable(false);
+                        return;
+                    }
+
+                    lwEvent('employeeDeleted');
+                    resetDelete();
+                    delModal.hide();
+                } catch (err) {
+                    deShowAlert('danger', 'Network error: ' + err);
+                    deDisable(false);
+                }
+            }
+
+            delModalEl.addEventListener('hidden.bs.modal', () => {
+                document.body.classList.remove('modal-open');
+                document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+            });
+
+            // Expose
+            return {
+                openEdit,
+                resetEdit,
+                submitEdit,
+                openDelete,
+                resetDelete,
+                submitDelete
             };
         })();
     </script>

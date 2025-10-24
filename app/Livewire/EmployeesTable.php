@@ -15,7 +15,10 @@ class EmployeesTable extends Component
     public $dir  = 'asc';
 
     protected $updatesQueryString = ['search', 'sort', 'dir'];
-    protected $listeners = ['embeddingSaved' => '$refresh'];
+    protected $listeners = ['embeddingSaved' => '$refresh',
+    'employeeCreated' => '$refresh',
+    'employeeUpdated'  => '$refresh',
+    'employeeDeleted'  => '$refresh',];
 
     public function updatingSearch() { $this->resetPage(); }
 

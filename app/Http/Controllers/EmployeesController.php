@@ -6,10 +6,73 @@ use App\Models\Employee;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use App\Support\OrgContext;
+use Illuminate\Validation\Rule;
 
 class EmployeesController extends Controller
 {
-    public function store(Request $request, Employee $employee)
+    public function store(Request $request)
+    {
+        $org = OrgContext::current(); // assumes it returns the org the logged-in user belongs to
+
+        $data = $request->validate([
+            'name'  => ['required', 'string', 'max:255'],
+            'email' => [
+                'required','string','email','max:255',
+                // unique email within the same organization
+                Rule::unique('employees', 'email')->where(fn ($q) => $q->where('organization_id', $org->id)),
+            ],
+        ]);
+
+        $employee = Employee::create([
+            'organization_id' => $org->id,
+            'name'  => $data['name'],
+            'email' => $data['email'],
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'employee' => [
+                'id' => $employee->id,
+                'name' => $employee->name,
+                'email' => $employee->email,
+            ],
+        ]);
+    }
+
+    public function update(Request $request, Employee $employee)
+    {
+        $org = OrgContext::current();
+        abort_if($employee->organization_id !== $org->id, 403);
+
+        $data = $request->validate([
+            'name'  => ['required', 'string', 'max:255'],
+            'email' => [
+                'required','string','email','max:255',
+                Rule::unique('employees','email')
+                    ->where(fn($q) => $q->where('organization_id', $org->id))
+                    ->ignore($employee->id),
+            ],
+        ]);
+
+        $employee->update($data);
+
+        return response()->json(['ok' => true, 'employee' => $employee]);
+    }
+
+    public function destroy(Employee $employee)
+    {
+        $org = OrgContext::current();
+        abort_if($employee->organization_id !== $org->id, 403);
+
+        // If your migration used cascadeOnDelete() for face_embeddings (you did), this will delete embeddings automatically.
+        // Otherwise, manually: DB::table('face_embeddings')->where('employee_id',$employee->id)->delete();
+        $employee->delete();
+
+        return response()->json(['ok' => true]);
+    }
+    
+    public function embed(Request $request, Employee $employee)
     {
         // Expect an image (from upload or camera blob)
         $request->validate([

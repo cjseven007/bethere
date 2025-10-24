@@ -33,9 +33,11 @@ Route::middleware(['auth'])->group(function() {
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/users', [UsersController::class,'index'])->name('users.index');
-
+    Route::post('/employees', [EmployeesController::class, 'store'])->name('employees.store');
+    Route::put('/employees/{employee}', [EmployeesController::class, 'update'])->name('employees.update');
+    Route::delete('/employees/{employee}', [EmployeesController::class, 'destroy'])->name('employees.destroy');
     // Embedding capture endpoint (image upload)
-    Route::post('/employees/{employee}/embed', [EmployeesController::class, 'store'])
+    Route::post('/employees/{employee}/embed', [EmployeesController::class, 'embed'])
     ->name('employees.embed');
 });
 
