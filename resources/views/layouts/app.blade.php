@@ -45,8 +45,8 @@
             <div class="d-flex ms-auto align-items-center">
                 @auth
                     <div class="dropdown">
-                        <a class="text-white text-decoration-none dropdown-toggle" href="#" role="button"
-                            data-bs-toggle="dropdown">
+                        <a class="text-white text-decoration-none dropdown-toggle" href="#" id="userDropdown"
+                            role="button" data-bs-toggle="dropdown">
                             <i class="bi bi-person-circle me-1"></i>{{ auth()->user()->name }}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end">
@@ -123,12 +123,25 @@
     {{-- jQuery + Bootstrap Bundle (if your app.js doesn’t already include Bootstrap JS) --}}
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
     {{-- Bootstrap JS bundle (includes Popper) --}}
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
-        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous">
     </script>
 
     @livewireScripts
     @stack('scripts')
 </body>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const dropdownTrigger = document.getElementById('userDropdown');
+
+        // Create a Bootstrap Dropdown instance
+        const dropdown = new bootstrap.Dropdown(dropdownTrigger);
+
+        // Toggle on click manually (use your own event if needed)
+        dropdownTrigger.addEventListener('click', (e) => {
+            e.preventDefault(); // prevent page jump
+            dropdown.toggle();
+        });
+    });
+</script>
 
 </html>
