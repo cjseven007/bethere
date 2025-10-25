@@ -38,10 +38,30 @@ jobs:
           npm run build
 
       # Package code + vendor + built assets (exclude CI files)
-      - name: Pack artifact
+      - name: Pack artifact (stable)
         run: |
-          rm -rf .git .github tests
-          tar -czf app.tgz .
+          # 1) Stage into a clean temp dir so files don't change mid-tar
+          STAGE="/tmp/pkg"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+
+          # 2) Copy everything we need (vendor + built assets), exclude noisy stuff
+          rsync -a \
+            --delete \
+            --exclude='.git' \
+            --exclude='.gitignore' \
+            --exclude='.gitattributes' \
+            --exclude='.github' \
+            --exclude='tests' \
+            --exclude='storage/logs/*' \
+            --exclude='node_modules' \
+            ./ "$STAGE/"
+
+          # 3) Create tarball from the staged dir
+          tar -czf app.tgz -C "$STAGE" .
+
+          # 4) Optional: show resulting size
+          du -h app.tgz
 
       # Upload tarball to the VM
       - name: Upload to VM
