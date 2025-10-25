@@ -10,10 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Checkout code
       - name: Checkout
         uses: actions/checkout@v4
 
-      # PHP + Composer for CI build (VM doesn't need Composer)
+      # PHP & Composer for CI build
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -25,7 +26,7 @@ jobs:
       - name: Install Composer deps (no dev)
         run: composer install --no-dev --prefer-dist --no-interaction --no-progress
 
-      # Build Vite assets in CI
+      # Vite build
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -37,15 +38,12 @@ jobs:
           npm ci
           npm run build
 
-      # Package code + vendor + built assets (exclude CI files)
-      - name: Pack artifact (stable)
+      # Package code + vendor + built assets
+      - name: Pack artifact
         run: |
-          # 1) Stage into a clean temp dir so files don't change mid-tar
           STAGE="/tmp/pkg"
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
-
-          # 2) Copy everything we need (vendor + built assets), exclude noisy stuff
           rsync -a \
             --delete \
             --exclude='.git' \
@@ -56,60 +54,67 @@ jobs:
             --exclude='storage/logs/*' \
             --exclude='node_modules' \
             ./ "$STAGE/"
-
-          # 3) Create tarball from the staged dir
           tar -czf app.tgz -C "$STAGE" .
-
-          # 4) Optional: show resulting size
           du -h app.tgz
 
-      # Upload tarball to the VM
-      - name: Write SSH key to workspace
-        run: |
-          printf "%s" "${{ secrets.SSH_KEY }}" > ./deploy_key
-          chmod 600 ./deploy_key
-
+      # Upload to VM using direct SSH key secret
       - name: Upload to VM (scp)
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
-          key_path: ./deploy_key # <— workspace path, not ~/.ssh
+          key: ${{ secrets.SSH_KEY }}
           source: app.tgz
           target: /tmp/
 
+      # Deploy remotely on VM
       - name: Remote deploy (ssh)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
-          key_path: ./deploy_key # <— same workspace file
+          key: ${{ secrets.SSH_KEY }}
           script: |
             set -e
             APP_PATH="${{ secrets.APP_PATH }}"
             TMP_DIR="/tmp/deploy_$(date +%s)"
+
             mkdir -p "$TMP_DIR"
             tar -xzf /tmp/app.tgz -C "$TMP_DIR"
             rm -f /tmp/app.tgz
-            if [ -f "$APP_PATH/.env" ]; then cp "$APP_PATH/.env" "$TMP_DIR/.env"; fi
+
+            # keep existing .env from server
+            if [ -f "$APP_PATH/.env" ]; then
+              cp "$APP_PATH/.env" "$TMP_DIR/.env"
+            fi
+
+            # swap directories
             sudo rm -rf "${APP_PATH}.bak"
             [ -d "$APP_PATH" ] && sudo mv "$APP_PATH" "${APP_PATH}.bak" || true
             sudo mv "$TMP_DIR" "$APP_PATH"
             sudo chown -R $USER:www-data "$APP_PATH"
+
+            # permissions
             mkdir -p "$APP_PATH/storage" "$APP_PATH/bootstrap/cache"
             find "$APP_PATH/storage" -type d -exec chmod 775 {} \;
             find "$APP_PATH/bootstrap/cache" -type d -exec chmod 775 {} \;
+
+            # Laravel housekeeping (no DB migrations)
             cd "$APP_PATH"
             php artisan key:generate --force || true
             php artisan storage:link || true
+
             php artisan config:clear  || true
             php artisan route:clear   || true
             php artisan view:clear    || true
             php artisan event:clear   || true
+
             php artisan config:cache  || true
             php artisan route:cache   || true
             php artisan view:cache    || true
             php artisan event:cache   || true
+
+            # reload apache
             sudo systemctl reload apache2 || true
