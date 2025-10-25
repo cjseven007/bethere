@@ -64,11 +64,10 @@ jobs:
           du -h app.tgz
 
       # Upload tarball to the VM
-      - name: Write SSH key to file
+      - name: Write SSH key to workspace
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
+          printf "%s" "${{ secrets.SSH_KEY }}" > ./deploy_key
+          chmod 600 ./deploy_key
 
       - name: Upload to VM (scp)
         uses: appleboy/scp-action@v0.1.7
@@ -76,9 +75,9 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
-          key_path: ~/.ssh/deploy_key
-          source: "app.tgz"
-          target: "/tmp/"
+          key_path: ./deploy_key # <— workspace path, not ~/.ssh
+          source: app.tgz
+          target: /tmp/
 
       - name: Remote deploy (ssh)
         uses: appleboy/ssh-action@v1.0.3
@@ -86,41 +85,31 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
-          key_path: ~/.ssh/deploy_key
+          key_path: ./deploy_key # <— same workspace file
           script: |
             set -e
             APP_PATH="${{ secrets.APP_PATH }}"
             TMP_DIR="/tmp/deploy_$(date +%s)"
-
             mkdir -p "$TMP_DIR"
             tar -xzf /tmp/app.tgz -C "$TMP_DIR"
             rm -f /tmp/app.tgz
-
-            if [ -f "$APP_PATH/.env" ]; then
-              cp "$APP_PATH/.env" "$TMP_DIR/.env"
-            fi
-
+            if [ -f "$APP_PATH/.env" ]; then cp "$APP_PATH/.env" "$TMP_DIR/.env"; fi
             sudo rm -rf "${APP_PATH}.bak"
             [ -d "$APP_PATH" ] && sudo mv "$APP_PATH" "${APP_PATH}.bak" || true
             sudo mv "$TMP_DIR" "$APP_PATH"
             sudo chown -R $USER:www-data "$APP_PATH"
-
             mkdir -p "$APP_PATH/storage" "$APP_PATH/bootstrap/cache"
             find "$APP_PATH/storage" -type d -exec chmod 775 {} \;
             find "$APP_PATH/bootstrap/cache" -type d -exec chmod 775 {} \;
-
             cd "$APP_PATH"
             php artisan key:generate --force || true
             php artisan storage:link || true
-
             php artisan config:clear  || true
             php artisan route:clear   || true
             php artisan view:clear    || true
             php artisan event:clear   || true
-
             php artisan config:cache  || true
             php artisan route:cache   || true
             php artisan view:cache    || true
             php artisan event:cache   || true
-
             sudo systemctl reload apache2 || true
