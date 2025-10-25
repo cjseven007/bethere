@@ -64,51 +64,51 @@ jobs:
           du -h app.tgz
 
       # Upload tarball to the VM
-      - name: Upload to VM
+      - name: Write SSH key to file
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+      - name: Upload to VM (scp)
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          key_path: ~/.ssh/deploy_key
           source: "app.tgz"
           target: "/tmp/"
 
-      # Deploy on the VM (reuse server .env, no migrations)
-      - name: Remote deploy
+      - name: Remote deploy (ssh)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          key_path: ~/.ssh/deploy_key
           script: |
             set -e
             APP_PATH="${{ secrets.APP_PATH }}"
             TMP_DIR="/tmp/deploy_$(date +%s)"
 
-            # Unpack new release
             mkdir -p "$TMP_DIR"
             tar -xzf /tmp/app.tgz -C "$TMP_DIR"
             rm -f /tmp/app.tgz
 
-            # Keep server .env
             if [ -f "$APP_PATH/.env" ]; then
               cp "$APP_PATH/.env" "$TMP_DIR/.env"
             fi
 
-            # Atomic-ish swap
             sudo rm -rf "${APP_PATH}.bak"
             [ -d "$APP_PATH" ] && sudo mv "$APP_PATH" "${APP_PATH}.bak" || true
             sudo mv "$TMP_DIR" "$APP_PATH"
             sudo chown -R $USER:www-data "$APP_PATH"
 
-            # Permissions
             mkdir -p "$APP_PATH/storage" "$APP_PATH/bootstrap/cache"
             find "$APP_PATH/storage" -type d -exec chmod 775 {} \;
             find "$APP_PATH/bootstrap/cache" -type d -exec chmod 775 {} \;
 
-            # Laravel housekeeping
             cd "$APP_PATH"
             php artisan key:generate --force || true
             php artisan storage:link || true
@@ -123,7 +123,4 @@ jobs:
             php artisan view:cache    || true
             php artisan event:cache   || true
 
-            # NO database migrations by request
-
-            # Reload Apache
             sudo systemctl reload apache2 || true
