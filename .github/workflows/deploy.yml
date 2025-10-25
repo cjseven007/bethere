@@ -1,0 +1,109 @@
+name: Deploy Laravel (Vite) to GCE VM
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # PHP + Composer for CI build (VM doesn't need Composer)
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          tools: composer
+          coverage: none
+          extensions: mbstring, intl, pdo_mysql, bcmath, curl, xml, zip
+
+      - name: Install Composer deps (no dev)
+        run: composer install --no-dev --prefer-dist --no-interaction --no-progress
+
+      # Build Vite assets in CI
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install & build frontend
+        run: |
+          npm ci
+          npm run build
+
+      # Package code + vendor + built assets (exclude CI files)
+      - name: Pack artifact
+        run: |
+          rm -rf .git .github tests
+          tar -czf app.tgz .
+
+      # Upload tarball to the VM
+      - name: Upload to VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "app.tgz"
+          target: "/tmp/"
+
+      # Deploy on the VM (reuse server .env, no migrations)
+      - name: Remote deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -e
+            APP_PATH="${{ secrets.APP_PATH }}"
+            TMP_DIR="/tmp/deploy_$(date +%s)"
+
+            # Unpack new release
+            mkdir -p "$TMP_DIR"
+            tar -xzf /tmp/app.tgz -C "$TMP_DIR"
+            rm -f /tmp/app.tgz
+
+            # Keep server .env
+            if [ -f "$APP_PATH/.env" ]; then
+              cp "$APP_PATH/.env" "$TMP_DIR/.env"
+            fi
+
+            # Atomic-ish swap
+            sudo rm -rf "${APP_PATH}.bak"
+            [ -d "$APP_PATH" ] && sudo mv "$APP_PATH" "${APP_PATH}.bak" || true
+            sudo mv "$TMP_DIR" "$APP_PATH"
+            sudo chown -R $USER:www-data "$APP_PATH"
+
+            # Permissions
+            mkdir -p "$APP_PATH/storage" "$APP_PATH/bootstrap/cache"
+            find "$APP_PATH/storage" -type d -exec chmod 775 {} \;
+            find "$APP_PATH/bootstrap/cache" -type d -exec chmod 775 {} \;
+
+            # Laravel housekeeping
+            cd "$APP_PATH"
+            php artisan key:generate --force || true
+            php artisan storage:link || true
+
+            php artisan config:clear  || true
+            php artisan route:clear   || true
+            php artisan view:clear    || true
+            php artisan event:clear   || true
+
+            php artisan config:cache  || true
+            php artisan route:cache   || true
+            php artisan view:cache    || true
+            php artisan event:cache   || true
+
+            # NO database migrations by request
+
+            # Reload Apache
+            sudo systemctl reload apache2 || true
